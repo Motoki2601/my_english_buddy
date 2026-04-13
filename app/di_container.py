@@ -13,7 +13,18 @@ from app.infrastructure.audio.speaker import Speaker
 from app.infrastructure.openai.chat_client import OpenAIChatClient
 from app.infrastructure.openai.speech_to_text import SpeechToText as OpenAISpeechToText
 from app.infrastructure.openai.text_to_speech import TextToSpeech as OpenAITextToSpeech
+from app.infrastructure.web.speech_to_text import WebSpeechToText
+from app.infrastructure.web.text_to_speech import WebTextToSpeech
 from app.utils.logger import Logger
+
+
+@dataclass(frozen=True)
+class WebAppContainer:
+    config: AppConfig
+    logger: Logger
+    stt: WebSpeechToText
+    tts: WebTextToSpeech
+    conversation_service: ConversationService
 
 
 @dataclass(frozen=True)
@@ -94,4 +105,35 @@ def build_container(
         tts=tts,
         conversation_service=conversation_service,
         conversation_runner=conversation_runner,
+    )
+
+
+def build_web_container(config: AppConfig) -> WebAppContainer:
+    logger = Logger()
+    system_prompt = config.resolve_system_prompt()
+
+    openai_client = OpenAI(
+        api_key=config.openai.api_key,
+        base_url=config.openai.base_url,
+    )
+
+    chat_client = OpenAIChatClient(
+        client=openai_client,
+        model=config.openai.model,
+    )
+
+    stt = WebSpeechToText(client=openai_client)
+    tts = WebTextToSpeech(client=openai_client)
+
+    conversation_service = ConversationService(
+        chat_client=chat_client,
+        system_prompt=system_prompt,
+    )
+
+    return WebAppContainer(
+        config=config,
+        logger=logger,
+        stt=stt,
+        tts=tts,
+        conversation_service=conversation_service,
     )

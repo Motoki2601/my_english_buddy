@@ -1,11 +1,6 @@
 import sys
 
-from PySide6.QtWidgets import QApplication
-
 from app.config import AppConfig
-from app.di_container import build_container
-from app.presentation.conversation_worker import ConversationWorker
-from app.presentation.main_window import MainWindow
 from app.utils.args import parse_args
 from app.utils.env import load_dotenv
 
@@ -16,10 +11,59 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = AppConfig.from_env()
-        container = build_container(config)
     except ValueError as e:
         print(f"Config error: {e}", file=sys.stderr)
         return 1
+
+    if args.web:
+        return _run_web(config, host=args.host, port=args.port)
+    return _run_desktop(config)
+
+
+def _run_web(config: AppConfig, *, host: str, port: int) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            "Web mode requires extra dependencies.\n"
+            "Install with: uv pip install 'my-english-buddy[web]'",
+            file=sys.stderr,
+        )
+        return 1
+
+    from app.di_container import build_web_container
+    from app.presentation.web_server import create_app
+
+    try:
+        container = build_web_container(config)
+    except Exception as e:
+        print(f"Failed to initialize web application: {e}", file=sys.stderr)
+        return 2
+
+    app = create_app(
+        conversation_service=container.conversation_service,
+        stt=container.stt,
+        tts=container.tts,
+        logger=container.logger,
+    )
+
+    print(f"\nStarting My English Buddy (web mode)")
+    print(f"Open on your smartphone: http://<your-ip>:{port}\n")
+
+    uvicorn.run(app, host=host, port=port)
+    container.logger.save()
+    return 0
+
+
+def _run_desktop(config: AppConfig) -> int:
+    from PySide6.QtWidgets import QApplication
+
+    from app.di_container import build_container
+    from app.presentation.conversation_worker import ConversationWorker
+    from app.presentation.main_window import MainWindow
+
+    try:
+        container = build_container(config)
     except Exception as e:
         print(f"Failed to initialize application: {e}", file=sys.stderr)
         return 2
